@@ -4,6 +4,7 @@ Created on Wed Jul 13 07:06:55 2022
 
 @author: DELL
 """
+#%%
 from hunanu.Instrument.VNA_keysightN5231b_4Portsand2Ports import keysight_vna
 from hunanu.Instrument.GS200_SPT  import GS_200
 from hunanu.Instrument.SA_keysightN9020B import keysightSA_N9020B as SA
@@ -17,7 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 
-filename = f'/home/machine1/E/Data/YingHu/gmon_coupler_2309C_XS01_231010/'
+filename = f'/home/machine1/E/Data/LSY_new/data/CELv1/'
 if not os.path.exists(filename):
     os.makedirs(filename)
 from hunanu.Instrument.SMB_100A import MW
@@ -28,6 +29,48 @@ matplotlib.rcParams['font.family']='sans-serif'
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter, FixedLocator, MaxNLocator,LogLocator,FixedFormatter
 from hunanu.Functions.function0 import savetxt,plot_removebg,todB,imshow,phase_handle,Lorentz_fitting_VNA,half_value_width
 from scipy.optimize import leastsq
+def todB(S21):
+    dBS21=10*np.log10(np.abs(S21))
+    return(dBS21)
+def NorAmp(S21):
+    Amp21=(np.abs(S21))/np.max(np.abs(S21))
+    return(Amp21**2)
+def Phase_handle(Phase,f1,phase_delay,phase_offset):
+    phase_correct=np.zeros((Phase.shape[0]))
+    for i in range(len(f1)):
+        phase_temp=Phase[i]+2*np.pi*f1[i]*phase_delay+phase_offset
+        phase_correct[i]=np.angle(np.cos(phase_temp)+1j*np.sin(phase_temp))
+    return phase_correct
+def deldata(data,index):
+    newdata=[data[i] for i in range(len(data)) if i!=index]
+    return newdata
+from scipy import optimize
+def lorentz(x,A0,A,x0,kappa):
+    y=A0-1*np.abs(A*kappa)/(4*(x-x0)**2+kappa**2)
+    return y
+def findFWHM(xData,yData):
+    sort=np.argsort(yData)
+    x0=sort[0]
+    x0_data=xData[x0]
+    ymin=np.min(yData)
+    hight=np.max(yData)-np.min(yData)
+    halfhight=ymin+hight/2
+    diff=yData-halfhight
+    Left=diff[0:x0]
+    Right=diff[x0:-1]
+    if x0==0:
+        x2=np.argsort(Right)[0]+x0
+        kappa=2*x2
+    else:
+        x1=np.argsort(Left)[0]
+        x2=np.argsort(Right)[0]+x0
+        kappa=xData[x2]-xData[x1]
+    return x0_data,kappa
+def fitlorentz(xData,yData):
+    x00,kappa0=findFWHM(xData,yData)
+    p0=[np.max(yData),(np.min(yData)-np.max(yData))*kappa0,x00,kappa0]
+    A0,A,x0,kappa=optimize.curve_fit(lorentz,xData,yData,p0=p0)[0]
+    return A0,A,x0,kappa
 #%%
 
 def GS(num,setvalue,velocity):
@@ -42,20 +85,24 @@ GS(3,-0.245,0.001)
 
 #%% DC-control-1
  
-gs_qubit_local=GS_200('DC2') 
+# gs_qubit_local=GS_200('DC2') 
 #gs3=GS_200('DC3') 
-gs_global=GS_200('DC5') 
-gs_gmon_local=GS_200('DC1') 
+gs4=GS_200('DC4') 
+gs4.setCURRmode()
+gs4.Start_OutPut()
+gs4.getlevel()
+# gs_gmon_local=GS_200('DC1') 
 # vna=keysight_vna('vna1',trace=21)
 #%%
-gs_qubit_local.Start_OutPut()
+# gs_qubit_local.Start_OutPut()
 gs_global.Start_OutPut()
-gs_gmon_local.Start_OutPut()
+# gs_gmon_local.Start_OutPut()
 #%% DC-control 2
-gs_qubit_local.setlevel_slow(0.00,0.001)#QUBIT4
-gs_global.setlevel_slow(-0.0,0.005)#QUBIT4
-gs_gmon_local.setlevel_slow(-0.57,0.002)#QUBIT4
-     #%% VNA-sweep-setup-1port
+# gs_qubit_local.setlevel_slow(0.00,0.001)#QUBIT4
+gs_global.setlevel_slowV2(-0.556,0.0001)#QUBIT4
+# gs_gmon_local.setlevel_slow(-0.57,0.002)#QUBIT4
+
+#%% VNA-sweep-setup-1port
 which='S21'
 # whichtrace=int(which[1]+which[2])
 cavityfre=6.745
@@ -88,6 +135,73 @@ np.savez(filename+'qubit_freq'+str(time.strftime("%H%M%S"))+'.npz',fre=f,vnapwr=
 plt.savefig(filename+'qubit_freq'+str(time.strftime("%H%M%S"))+".eps",format="eps",dpi=300)#%% VNA-sweep-setup-1port
 plt.savefig(filename+'qubit_freq'+str(time.strftime("%H%M%S"))+".jpg",format="jpg",dpi=300)#%% VNA-sweep-setup-1port
 #%%
+which='S21'
+# whichtrace=int(which[1]+which[2])
+cavityfre=6.772
+measurewidth=0.06
+
+vna=keysight_vna('vna2',trace=43)
+which='S21'
+RTatt=60
+fstart=cavityfre - measurewidth/2
+fstop=cavityfre + measurewidth/2
+
+# fstart=6
+# fstop=8
+Data_ALL = []
+vnapwr_list = np.linspace(-25,-5,21)
+for i in range(len(vnapwr_list)):
+    points=601
+    ifband=30
+    vnapwr=vnapwr_list[i]
+    f=np.linspace(fstart,fstop,points)
+    
+    vna.set_power(vnapwr)
+    vna.set_startstopFre(fstart,fstop)
+    vna.set_points_band(points,ifband)
+    
+    Sdata43=vna.get_data() 
+    Data_ALL.append(Sdata43)
+    S_dataplot_amp=20*np.log10(np.abs(Sdata43))
+    
+    Phase=np.angle(np.array(Sdata43))
+    S_dataplot_phase=phase_handle(Phase[None,:],f,67.12)
+    
+    Amp=(S_dataplot_amp)
+    A0,A,x0,kappa=fitlorentz(f[:],Amp[:])
+    fig,axes=plt.subplots(1,2,figsize = (10,4))
+    axes[0].plot(f, Amp)
+    axes[0].plot(f[:],lorentz(f[:],A0,A,x0,kappa),'r--')
+    axes[0].set_title(rf"Amp $\kappa$={round(kappa*1000,3)}MHz")
+    axes[0].set_xlabel("Freqency (GHz)")
+    axes[0].set_ylabel(r"Amp (dB)")
+    axes[1].plot(f, S_dataplot_phase.T)
+    axes[1].set_title("Phase")
+    axes[1].set_xlabel("Freqency (GHz)")
+    axes[1].set_ylabel("Degree")
+    
+    import os
+    filename = f'/home/machine1/E/Data/Hedong/tanmo_cavity/'
+    if not os.path.exists(filename):
+        os.makedirs(filename)
+    plt.savefig(filename+f'cavity_spectrum_vnapwr_{vnapwr}dB'+str(time.strftime("%H%M%S"))+'.png',format='png',dpi=600)
+    
+    Sdata=np.array(Sdata43)
+    about=f'''
+    BOX?; setup: in:port 2,out: 1;
+    Attenuation: Vna={RTatt-vnapwr} dB={RTatt}+{-vnapwr} dB, inline = 60 dB = 42+8+10 dB,
+    Amp: outline=76 dB(RT)+36 dB(4K) 
+    
+    VNA Paras: fstart = {fstart} GHz,fstop = {fstop} GHz,points = {points},ifband = {ifband} Hz,vnapwr = {vnapwr} dB 
+    '''
+    
+    
+    # filename1=filename+filenameafter+'.npz'
+    np.savez(filename+f'cavity_spectrum_vnapwr_{vnapwr}dB'+str(time.strftime("%H%M%S"))+'.png',cavityfre=cavityfre,Sdata=Sdata,vnapwr=vnapwr,about=about)
+    about_txt=open(filename+f'cavity_spectrum_vnapwr_{vnapwr}dB'+str(time.strftime("%H%M%S"))+'.txt','a')
+    about_txt.write(str(about))
+    about_txt.close()
+np.savez(filename+'cavity_spectrum_Data_all'+str(time.strftime("%H%M%S"))+'.png',cavityfre=cavityfre,Data_ALL=Data_ALL,vnapwr_list=vnapwr_list)
 
 #%%sweep setting
 qubitnum=4
@@ -725,6 +839,87 @@ plt.savefig(filename2+"_PHASE"+'.jpg',format='jpg',dpi=300)
 
 heatmap(volt,f,S_dataplot_amp,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter+"_AMP",filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
 heatmap(volt,f,S_dataplot_phase,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter+"_PHASE",filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
+#%%sweep cavity VS power
+qubitnum = 2
+vna = keysight_vna('vna2',trace=21)
+which = 'S21'
+RTatt = 60
+
+fstart, fstop, points =6.45-0.004, 6.45+0.004, 101 
+
+ifband = 20
+# vnapwr = -20
+
+f = np.linspace(fstop,fstart,points)
+f1 = f[::-1]  
+  
+
+vna.set_startstopFre(fstart,fstop)
+vna.set_points_band(points,ifband)
+# exec('test=vna.get_data_'+which+'()')
+# plt.figure('test')
+# plt.plot(f[::-1],todB(test))    
+# plt.xlabel('Frequency(Ghz)')
+# plt.ylabel('Amplitude(dB)')   
+filename = f'/home/machine1/E/Data/LSY_new/data/CELv1/'
+if not os.path.exists(filename):
+    os.makedirs(filename)
+
+Globalnum = 4
+filenameafter = 'Energyspetrum{}_qubit{}_with_qubit_f_{}_to_{}_vnapwr{}_RTatt{}_Cinch3_{}_GS_qubit_local_'.format(Globalnum,qubitnum,fstart,fstop,vnapwr,RTatt,qubitnum)+str(time.strftime("%m%d%H%M%S"))
+filename1=filename+filenameafter
+
+vnapwr_list = np.linspace(-20, 6, 27)
+# gs_qubit_local.Start_OutPut()
+# gs_qubit_local.setlevel_slow(volt[0],0.0005)
+time1=time.time()
+S_data=[]
+k=0
+for i in tqdm(range(len(vnapwr_list))):
+    vna.set_power(vnapwr_list[i])
+    data=vna.get_data() 
+    S_data.append(data)
+    S_dataplot=np.rot90(np.array(S_data))
+    S_dataplot_amp=20*np.log10(np.abs(S_dataplot))
+    
+    Phase = np.angle(np.array(S_data))
+    S_dataplot_phase = np.rot90(phase_handle(Phase, f1, 62.06))
+    
+    # k += 1
+    # if k==10:
+    #     heatmap(np.linspace(volt[0], volt[i], i), f, S_dataplot_amp, corlor_scale='bwr', xlabel='Current[mA]',
+    #             ylabel='Frequency[Ghz]', title='sweep_Amp', filename=filename1, errobar=[], zmin=0, zmax=1, zauto=True)
+    #     heatmap(np.linspace(volt[0], volt[i], i), f, S_dataplot_phase, corlor_scale='bwr', xlabel='Current[mA]',
+    #             ylabel='Frequency[Ghz]', title='sweep_Phase', filename=filename1, errobar=[], zmin=0, zmax=1, zauto=True)
+    #     k=0
+
+# gs3.setlevel_slow(-0,0.01) 
+Sdata=np.array(S_data)
+
+# filenameafter='Energyspetrum{}_qubit{}_with_qubit_f_{}_to_{}_vnapwr{}_RTatt{}_Cinch3_{}_gs1_'.format(Globalnum,qubitnum,fstart,fstop,vnapwr,RTatt,qubitnum)+str(time.strftime("%m%d%H%M%S"))
+
+# about=' BOX?; setup: in:port 18,out: 20; \n\
+#     Attenuation: Vna={}dB={}+{}dB, inline=60dB=42+8+10dB, outline=76dB(RT)+36dB(4K) \n\
+#     fstart={}Ghz,fstop={}Ghz,points={},ifband={}Hz,vnapwr={}dB \n\
+#     current from{}mA to{}mA'.format(RTatt-vnapwr,RTatt,-vnapwr,fstart,fstop,points,ifband,vnapwr,volt[0],volt[-1])
+
+# filename1=filename+filenameafter+'.npz'
+# np.savez(filename1,fre=f,volt=volt,Sdata=Sdata,vnapwr=vnapwr,about=about)
+# about_txt=open(filename+filenameafter+'.txt','a')
+# about_txt.write(str(about))
+# about_txt.close()
+
+# filename2=filename+filenameafter
+imshow(S_dataplot_amp,figname=filename+"_AMP",extent=[vnapwr_list[0],vnapwr_list[i],f[-1],f[0]],xround='%0.2f',yround='%0.2f',xlabel=r'Current(mA)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+# plt.savefig(filename2+"_AMP"+'.pdf',format='pdf',dpi=300)
+# plt.savefig(filename2+"_AMP"+'.jpg',format='jpg',dpi=300)
+
+# imshow(S_dataplot_phase,figname=filename2+"_PHASE",extent=[volt[0],volt[i],f[-1],f[0]],xround='%0.2f',yround='%0.2f',xlabel=r'Current(mA)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+# plt.savefig(filename2+"_PHASE"+'.pdf',format='pdf',dpi=300)
+# plt.savefig(filename2+"_PHASE"+'.jpg',format='jpg',dpi=300)
+
+heatmap(volt,f,S_dataplot_amp,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter+"_AMP",filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
+heatmap(volt,f,S_dataplot_phase,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter+"_PHASE",filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
 #%%sweep cavity energy specturm_local
 qubitnum = 2
 vna = keysight_vna('vna2',trace=21)
@@ -807,13 +1002,14 @@ plt.savefig(filename2+"_PHASE"+'.jpg',format='jpg',dpi=300)
 
 heatmap(volt,f,S_dataplot_amp,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter+"_AMP",filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
 heatmap(volt,f,S_dataplot_phase,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter+"_PHASE",filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
+
 #%%sweep AMP Vs current global 
 qubitnum = 2
-vna = keysight_vna('vna2',trace=21)
+vna = keysight_vna('vna2',trace=4)
 which = 'S21'
-RTatt = 70
+RTatt = 60
 
-fstart, fstop, points = 6.849,6.849,11 
+fstart, fstop, points = 6.45,6.45,11 
 
 ifband = 30
 vnapwr = -15
@@ -830,7 +1026,7 @@ vna.set_points_band(points,ifband)
 # plt.xlabel('Frequency(Ghz)')
 # plt.ylabel('Amplitude(dB)')   
 
-filename = f'/home/machine1/E/Data/YingHu/gmon_coupler_2309C_XS01/AMP_VS_local_Current{time.strftime("%m%d")}_{time.strftime("%H%M%S")}_freq_{fstart}GHz_to_{fstop}GHz/'
+filename = f'/home/machine1/E/Data/LSY_new/data/CELv1/cavity_VS_Global current/'
 if not os.path.exists(filename):
     os.makedirs(filename)
 
@@ -838,30 +1034,45 @@ Globalnum = 4
 filenameafter='AMPVSCurrent{}_qubit{}_with_qubit_f_{}_to_{}_vnapwr{}_RTatt{}_Cinch3_{}_gs1_'.format(Globalnum,qubitnum,fstart,fstop,vnapwr,RTatt,qubitnum)
 filename1=filename+filenameafter
 
-volt = np.linspace(-0.5,0.5,101)
-gs_qubit_local.Start_OutPut()
-gs_qubit_local.setlevel_slow(volt[0],0.005)
+volt = np.linspace(0,1,1001)
+gs_global.Start_OutPut()
+gs_global.setlevel_slowV2(volt[0],0.0001)
 time1=time.time()
-S_dataplot_amp_data=[]
-S_dataplot_phase_data=[]
+S21_dataplot_amp_data=[]
+S21_dataplot_phase_data=[]
+S43_dataplot_amp_data=[]
+S43_dataplot_phase_data=[]
 k = 0
 for i in tqdm(range(len(volt))):
 
     
-    S_data=[]
-    gs_qubit_local.setlevel_slow(volt[i],0.005)
-    data=vna.get_data() 
-    S_data.append(data)
-    S_dataplot=np.rot90(np.array(S_data))
-    S_dataplot_amp=20*np.log10(np.abs(S_dataplot))
+    S21_data=[]
+    gs_global.setlevel_slowV2(volt[i],0.0001)
+    Sdata21,Sdata43,_,_=vna.get_data_all()  
+    S21_data.append(Sdata21)
+    S21_dataplot=np.rot90(np.array(S21_data))
+    S21_dataplot_amp=20*np.log10(np.abs(S21_dataplot))
     
-    Phase = np.angle(np.array(S_data))
-    S_dataplot_phase = np.rot90(phase_handle(Phase, f1, 60.12))
+    Phase = np.angle(np.array(S21_data))
+    S21_dataplot_phase = np.rot90(phase_handle(Phase, f1, 50.11))
 
-    S_dataplot_amp_data.append( np.mean(S_dataplot_amp))
-    S_dataplot_phase_data.append( np.mean(S_dataplot_phase))
+    S21_dataplot_amp_data.append( np.mean(S21_dataplot_amp))
+    S21_dataplot_phase_data.append( np.mean(S21_dataplot_phase))
+    
+    S43_data=[]
+    S43_data.append(Sdata43)
+    S43_dataplot=np.rot90(np.array(S43_data))
+    S43_dataplot_amp=20*np.log10(np.abs(S43_dataplot))
+    
+    Phase = np.angle(np.array(S43_data))
+    S43_dataplot_phase = np.rot90(phase_handle(Phase, f1, 50.1))
+
+    S43_dataplot_amp_data.append( np.mean(S43_dataplot_amp))
+    S43_dataplot_phase_data.append( np.mean(S43_dataplot_phase))
+    
+    
     k=k+1
-    if k==10:
+    if k==200:
         
         # Phase = np.angle(np.rot90(np.expand_dims(np.array(S_data),axis=0)))
         # cp.expand_dims(loadfiltertxt('/home/machine1/g2/python_spt/Qlab/200-20-60.txt'),axis=0)
@@ -869,15 +1080,26 @@ for i in tqdm(range(len(volt))):
         
         
         
-        plt.figure(figsize=(12, 4), dpi=100)
-        plt.subplot(1,2,1)
-        plt.plot(volt[0:i],S_dataplot_amp_data[0:i])
-        plt.title("amp")
+        plt.figure(figsize=(12, 8), dpi=80)
+        plt.subplot(2,2,1)
+        plt.plot(volt[0:i],S21_dataplot_amp_data[0:i])
+        plt.title("S21amp")
         plt.xlabel("Current(mA)")
         plt.ylabel("Amplitude(dB)")   
-        plt.subplot(1,2,2)
-        plt.plot(volt[0:i],S_dataplot_phase_data[0:i])
-        plt.title("phase")
+        plt.subplot(2,2,2)
+        plt.plot(volt[0:i],S21_dataplot_phase_data[0:i])
+        plt.title("S21phase")
+        plt.xlabel("Current(mA)")
+        plt.ylabel("Phase")  
+        
+        plt.subplot(2,2,3)
+        plt.plot(volt[0:i],S43_dataplot_amp_data[0:i])
+        plt.title("S43amp")
+        plt.xlabel("Current(mA)")
+        plt.ylabel("Amplitude(dB)")   
+        plt.subplot(2,2,4)
+        plt.plot(volt[0:i],S43_dataplot_phase_data[0:i])
+        plt.title("S43phase")
         plt.xlabel("Current(mA)")
         plt.ylabel("Phase")  
         
@@ -899,7 +1121,7 @@ about=' BOX?; setup: in:port 7,out: 13; \n\
     current from{}mA to{}mA'.format(RTatt-vnapwr,RTatt,-vnapwr,fstart,fstop,points,ifband,vnapwr,volt[0],volt[-1])
 
 # filename1=filename+filenameafter+'.npz'
-np.savez(filename2,fre=f,volt=volt,S_dataplot_amp_data=S_dataplot_amp_data, S_dataplot_phase_data=S_dataplot_phase_data, vnapwr=vnapwr,about=about)
+np.savez(filename2,fre=f,volt=volt,S21_dataplot_amp_data=S21_dataplot_amp_data, S21_dataplot_phase_data=S21_dataplot_phase_data, S43_dataplot_amp_data=S43_dataplot_amp_data, S43_dataplot_phase_data=S43_dataplot_phase_data, vnapwr=vnapwr,about=about)
 about_txt=open(filename+filenameafter+'.txt','a')
 about_txt.write(str(about))
 about_txt.close()
@@ -915,6 +1137,34 @@ about_txt.close()
 
 # heatmap(volt,f,S_dataplot_amp,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter+"_AMP",filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
 # heatmap(volt,f,S_dataplot_phase,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter+"_PHASE",filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
+plt.figure(figsize=(12, 8), dpi=80)
+plt.subplot(2,2,1)
+plt.plot(volt[0:i],S21_dataplot_amp_data[0:i])
+plt.title("S21amp")
+plt.xlabel("Current(mA)")
+plt.ylabel("Amplitude(dB)")   
+plt.subplot(2,2,2)
+plt.plot(volt[0:i],S21_dataplot_phase_data[0:i])
+plt.title("S21phase")
+plt.xlabel("Current(mA)")
+plt.ylabel("Phase")  
+
+plt.subplot(2,2,3)
+plt.plot(volt[0:i],S43_dataplot_amp_data[0:i])
+plt.title("S43amp")
+plt.xlabel("Current(mA)")
+plt.ylabel("Amplitude(dB)")   
+plt.subplot(2,2,4)
+plt.plot(volt[0:i],S43_dataplot_phase_data[0:i])
+plt.title("S43phase")
+plt.xlabel("Current(mA)")
+plt.ylabel("Phase")  
+
+filenameafter='AMPVSCurrent{}_qubit{}_with_qubit_f_{}_to_{}_vnapwr{}_RTatt{}_Cinch3_{}_gs1_2'.format(Globalnum,qubitnum,fstart,fstop,vnapwr,RTatt,qubitnum)
+filename2=filename+filenameafter
+plt.savefig(filename2+"_AMP"+'.pdf',format='pdf',dpi=300)
+plt.savefig(filename2+"_AMP"+'.jpg',format='jpg',dpi=300)
+plt.clf()
 #%%sweep cavity VS power
 qubitnum = 2
 vna = keysight_vna('vna2',trace=21)
@@ -2773,14 +3023,14 @@ plt.savefig(filename2+'.jpg',format='jpg',dpi=300)
 heatmap(vnapwr,f,S_dataplot_amp,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter,filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
 heatmap(vnapwr,f,S_dataplot_phase,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter,filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
 #%%初始化网分 twotone
-vna=keysight_vna('vna2',trace=21)
+vna=keysight_vna('vna2',trace=43)
 vna.two_tone_vna()
-fstart=6.84423#12.97#6.471#6.483#6.479#6.47
-fstop=6.84423#12.97#6.471#6.483#6.479#6.47
-points=401
-RTatt=70
-ifband=30#每秒扫描次数
-vnapwr=-15#-12
+fstart=6.449#12.97#6.471#6.483#6.479#6.47
+fstop=6.449#12.97#6.471#6.483#6.479#6.47
+points=201
+RTatt=60
+ifband=20#每秒扫描次数
+vnapwr=-10#-12
 f=np.linspace(fstop,fstart,points)
 f1=f[::-1]    
 vna.set_power(vnapwr)
@@ -2789,11 +3039,10 @@ vna.set_points_band(points,ifband)
 #%%初始化微波源 twotone
 mw=MW('mw1')
 mw.MW_setpower(-130)
-mwpwr=-30#-35
-vary=0.5
-fc0=5.1
-mwfre_start=5.5
-mwfre_stop=7.5
+mwpwr=-15
+
+mwfre_start=4
+mwfre_stop=10
 points=points
 mw.VnaTrig(mwfre_start,mwfre_stop,points)
 mw.MW_setpower(mwpwr)
@@ -2802,59 +3051,183 @@ fwr=np.linspace(mwfre_start,mwfre_stop,points)
 fwr1=fwr[::-1]
 # mw.Close_Output()
 #%% twotone sweep z
-twotonenum =1#0.015#-0.016 #-0.0308#0.382;
+twotonenum = 1#0.015#-0.016 #-0.0308#0.382;
 # gs5.setlevel_slowV2(-0.2,0.0001)
 # gs5.setlevel_slowV2(Global,0.0001)
-which='S21'
 # gs3.setlevel_slowV2(1.5,0.005)
-alpha=0#gs3.getlevel()*1000
 
-filename = f'/home/machine1/E/Data/YingHu/gmon_coupler_2309C_XS01/twotone_energyspectrum/{time.strftime("%m%d")}_two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz/'
-if not os.path.exists(filename):
-    os.makedirs(filename)
-    
 
-name0='twotonenum_'+str(twotonenum)+which+'twotone_Cinch3_1_GS_03_RTatt{}_vnapwr{}_BW{}_mwpwr{}_'.format(RTatt,vnapwr,ifband,mwpwr)
-filename1=filename+name0+time.strftime("%H%M%S")+'_'
-exec('bg=vna.get_data_'+which+'()')
+# bg = vna.get_data()
 # gs1.setlevel_slowV2(-0.24,0.005)
-volt=np.linspace(-0.5,0,101)
+volt=np.linspace( 0.5, 2, 51)[::1]+0.4
+alpha_volt = np.linspace(1, 5, 5    )
 # gs6.Start_OutPut() #右z
 # time.sleep(339)
-gs_qubit_local.setlevel_slow(volt[0],0.005)#-0.9,0.05
+gs3.setlevel_slowV2(volt[0],0.005)#-0.9,0.05
 S_data=[]
 i=0
 mw.MW_setpower(mwpwr)
 print(time.strftime("%H:%M:%S"))
-for i in tqdm(range(len(volt))):
-    gs_qubit_local.setlevel_slow(volt[i], 0.005)
-    #gs2.setlevel_slow(round(-1.96-0.21/1.5*(volt[i]-2),3),0.001)
-    # gs2.setlevel_slow(round(0.24-0.21/1.5*(Iz+1.2),3),0.001)
-    # gs1.setlevel_slow(round(-0.24-0.27/1.5*(volt[i]-2),3),0.001)
-    # for j in range(len(mwf)):
-    # data=vna.get_data_S21() 
+for alpha in alpha_volt:
+    filename = f'/home/machine1/E/Data/LSY_new/data/CELv1/twotone_energyspectrum_RightQubit_RZ(alpha={alpha}mA)/two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz{time.strftime("%m%d")}/'
+    if not os.path.exists(filename):
+        os.makedirs(filename)
+    name0=f"two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz"
+    filename1=filename+name0+time.strftime("%H%M%S")+'_'
+    gs7.setlevel_slowV2(alpha, 5e-3)
+    print("alpha: ", alpha)
+    S_data=[]
+
+    for i in tqdm(range(len(volt))):
+        gs3.setlevel_slowV2(volt[i], 0.005)
+        #gs2.setlevel_slow(round(-1.96-0.21/1.5*(volt[i]-2),3),0.001)
+        # gs2.setlevel_slow(round(0.24-0.21/1.5*(Iz+1.2),3),0.001)
+        # gs1.setlevel_slow(round(-0.24-0.27/1.5*(volt[i]-2),3),0.001)
+        # for j in range(len(mwf)):
+        # data=vna.get_data_S21() 
+        data = vna.get_data_S43()
+        S_data.append(data)
+        S_dataplot=np.rot90(np.array(S_data))
+        S_dataplot_amp=20*np.log10(np.abs(S_dataplot))
+        Phase=np.angle(np.array(S_data))
+        S_dataplot_phase=np.rot90(phase_handle(Phase, f1, 50.03))
+        amp,phase=plot_removebg(S_dataplot_amp,S_dataplot_phase)
+        heatmap(np.linspace(volt[0],volt[i],i),fwr1,S_dataplot_amp,
+            corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title='Sweep_Amp',
+            filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True,auto_open=False)
+        heatmap(np.linspace(volt[0],volt[i],i),fwr1,S_dataplot_phase,
+                corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title='sweep_Phase',
+                filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True,auto_open=False)
+        # if i!=0:
+        #     fg1.clf()
+        #     fg2.clf()
+        # fg1=imshow(amp,figname='Two_Tone_Amp',extent=[volt[0],volt[i],fwr[0],fwr[-1]],
+        #            xround='%0.2f',yround='%0.3f',xlabel=r' volt (mA)',ylabel=r'Frequency (GHz)',
+        #            cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+        # fg2=imshow(phase,figname='Two_Tone_Phase',extent=[volt[0],volt[i],fwr[0],fwr[-1]],
+        #            xround='%0.2f',yround='%0.3f',xlabel=r'volt (mA)',ylabel=r'Frequency (GHz)',
+        #            cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+    
+    about=f'''
+    BOX?; setup: in:port 2,out: 1;
+
+    Attenuation: Vna={RTatt-vnapwr} dB={RTatt}+{-vnapwr} dB, inline = 60 dB = 42+8+10 dB,\n\
+    Amp: outline=76 dB(RT)+36 dB(4K)
+        
+    VNA Paras: fstart = {fstart} GHz,fstop = {fstop} GHz,points = {points},ifband = {ifband} Hz,vnapwr = {vnapwr} dB
+    MW Paras: mwpower = {mwpwr} dB, fstart = {mwfre_start} GHz, fstop = {mwfre_stop} GHz, points = {points}
+    GS current: {volt[0]}mA to {volt[-1]}mA, bias type: Local
+    ''' 
+    # filename1=filename+filenameafter+'.npz'
+    np.savez(filename1+'.npz',fre=fwr1,volt=volt,Sdata=Sdata,vnapwr=vnapwr,about=about)
+    about_txt=open(filename1+'.txt','a')
+    about_txt.write(str(about))
+    about_txt.close()
+    
+    # warning !!!!
+    volt = volt[::-1]
+    
+mw.MW_setpower(-130)
+# mw.Close_Output()
+# gs3.setlevel_slow(0,0.005)
+# gs6.setlevel_slowV2(0,0.005)  
+##%%SAVE for two tone
+Sdata=np.array(S_data)
+
+
+# filename1=filename+filenameafter+'.npz'
+# np.savez(filename1+'.npz',fre=fwr1,volt=volt,Sdata=Sdata,vnapwr=vnapwr,about=about)
+# about_txt=open(filename1+'.txt','a')
+# about_txt.write(str(about))
+# about_txt.close()
+
+filename2=filename1
+# imshow(S_dataplot_amp,figname=filename2+"_AMP",extent=[volt[0],volt[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'Current(mA)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+# plt.savefig(filename2+"_AMP"+'.pdf',format='pdf',dpi=300)
+# plt.savefig(filename2+"_AMP"+'.jpg',format='jpg',dpi=300)
+
+# imshow(S_dataplot_phase,figname=filename2+"_PHASE",extent=[volt[0],volt[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'Current(mA)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+# plt.savefig(filename2+"_PHASE"+'.pdf',format='pdf',dpi=300)
+# plt.savefig(filename2+"_PHASE"+'.jpg',format='jpg',dpi=300)
+#%%
+heatmap(volt,fwr1,S_dataplot_amp,corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title="Sweep_amp",filename=filename1,errobar=[],zmin=-10,zmax=10,zauto=True)
+#-np.mean(S_dataplot_amp,axis=0)[:,None].repeat(721,axis=1).T heatmap(volt,fwr1,S_dataplot_phase,corlor_scale='hot_r',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter,filename=filename,errobar=[],zmin=-1.5,zmax=2.5 ,zauto=False)
+
+        #%%初始化网分 twotone 2
+vna=keysight_vna('vna2',trace=43)
+vna.two_tone_vna()
+fstart=6.449#12.97#6.471#6.483#6.479#6.47
+fstop=6.449#12.97#6.471#6.483#6.479#6.47
+points=1001
+RTatt=60
+ifband=30#每秒扫描次数
+vnapwr=-20#-12
+f=np.linspace(fstop,fstart,points)
+f1=f[::-1]    
+vna.set_power(vnapwr)
+vna.set_startstopFre(fstart,fstop)
+vna.set_points_band(points,ifband)
+#%%初始化微波源 twotone
+mw=MW('mw1')
+mw.MW_setpower(-130)
+mwpwr=-50#-35
+
+mwfre_start=2
+mwfre_stop=12
+points=points
+mw.VnaTrig(mwfre_start,mwfre_stop,points)
+mw.MW_setpower(mwpwr)
+mw.start_Output()
+
+fwr=np.linspace(mwfre_start,mwfre_stop,points)
+fwr1=fwr[::-1]
+# mw.Close_Output()
+#%% twotone sweep mwpower
+twotonenum =1#0.015#-0.016 #-0.0308#0.382;
+# gs5.setlevel_slowV2(-0.2,0.0001)
+# gs5.setlevel_slowV2(Global,0.0001)
+which='S43'
+# gs3.setlevel_slowV2(1.5,0.005)
+alpha=0#gs3.getlevel()*1000
+
+filename = f'/home/machine1/E/Data/LSY_new/data/CELv1/twotone_energyspectrum(alpha={alpha}mA)_power/two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz{time.strftime("%m%d")}/'
+if not os.path.exists(filename):
+    os.makedirs(filename)
+
+
+name0=f"two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz"
+filename1=filename+name0+time.strftime("%H%M%S")+'_'
+exec('bg=vna.get_data_'+which+'()')
+# gs1.setlevel_slowV2(-0.24,0.005)
+# volt=np.linspace(-2.4,-2.4,1)
+# gs6.Start_OutPut() #右z
+# time.sleep(339)
+gs2.setlevel_slowV2(-2.4,0.005)#-0.9,0.05
+S_data=[]
+i=0
+mw.MW_setpower(mwpwr)
+mw.Close_Output()
+mwpwr_list = np.linspace(-50,0,101)
+print(time.strftime("%H:%M:%S"))
+for i in tqdm(range(len(mwpwr_list))):
+
+    mw.MW_setpower(mwpwr_list[i])
+    mw.start_Output()
     exec('data=vna.get_data_'+which+'()')
+    mw.Close_Output()
     S_data.append(data)
     S_dataplot=np.rot90(np.array(S_data))
     S_dataplot_amp=20*np.log10(np.abs(S_dataplot))
     Phase=np.angle(np.array(S_data))
-    S_dataplot_phase=np.rot90(phase_handle(Phase, f1, 60.12))
+    S_dataplot_phase=np.rot90(phase_handle(Phase, f1, 50.11))
     amp,phase=plot_removebg(S_dataplot_amp,S_dataplot_phase)
-    heatmap(np.linspace(volt[0],volt[i],i),fwr1,S_dataplot_amp,
+    heatmap(np.linspace(mwpwr_list[0],mwpwr_list[i],i),fwr1,S_dataplot_amp,
         corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title='Sweep_Amp',
-        filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True)
-    heatmap(np.linspace(volt[0],volt[i],i),fwr1,S_dataplot_phase,
+        filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True, auto_open=False)
+    heatmap(np.linspace(mwpwr_list[0],mwpwr_list[i],i),fwr1,S_dataplot_phase,
             corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title='sweep_Phase',
-            filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True)
-    # if i!=0:
-    #     fg1.clf()
-    #     fg2.clf()
-    # fg1=imshow(amp,figname='Two_Tone_Amp',extent=[volt[0],volt[i],fwr[0],fwr[-1]],
-    #            xround='%0.2f',yround='%0.3f',xlabel=r' volt (mA)',ylabel=r'Frequency (GHz)',
-    #            cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
-    # fg2=imshow(phase,figname='Two_Tone_Phase',extent=[volt[0],volt[i],fwr[0],fwr[-1]],
-    #            xround='%0.2f',yround='%0.3f',xlabel=r'volt (mA)',ylabel=r'Frequency (GHz)',
-    #            cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+            filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True, auto_open=False)
+
 mw.MW_setpower(-130)
 # mw.Close_Output()
 # gs3.setlevel_slow(0,0.005)
@@ -2864,26 +3237,246 @@ Sdata=np.array(S_data)
 about=' BOX?; setup: in:port 2,out: 1; \n\
     Attenuation: Vna={}dB={}+{}dB, inline=60dB=42+8+10dB, outline=76dB(RT)+36dB(4K) \n\
     fstart={}Ghz,fstop={}Ghz,points={},ifband={}Hz,vnapwr={}dB \n\
-    current from{}mA to{}mA'.format(RTatt-vnapwr,RTatt,-vnapwr,fstart,fstop,points,ifband,vnapwr,volt[0],volt[-1])
+    mwpower from{}mA to{}mA'.format(RTatt-vnapwr,RTatt,-vnapwr,fstart,fstop,points,ifband,vnapwr,mwpwr_list[0],mwpwr_list[-1])
+
 
 # filename1=filename+filenameafter+'.npz'
-np.savez(filename1+'.npz',fre=fwr1,volt=volt,Sdata=Sdata,vnapwr=vnapwr,about=about)
-about_txt=open(filename+filenameafter+'.txt','a')
+np.savez(filename1+'.npz',fre=fwr1,mwpwr_list=mwpwr_list,Sdata=Sdata,vnapwr=vnapwr,about=about)
+about_txt=open(filename1 +'.txt','a')
 about_txt.write(str(about))
 about_txt.close()
 
+filenameafter = "sweep"
+
 filename2=filename1
-imshow(S_dataplot_amp,figname=filename2+"_AMP",extent=[volt[0],volt[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'Current(mA)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+imshow(S_dataplot_amp,figname=filename2+"_AMP",extent=[mwpwr_list[0],mwpwr_list[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'power(dB)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
 plt.savefig(filename2+"_AMP"+'.pdf',format='pdf',dpi=300)
 plt.savefig(filename2+"_AMP"+'.jpg',format='jpg',dpi=300)
 
-imshow(S_dataplot_phase,figname=filename2+"_PHASE",extent=[volt[0],volt[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'Current(mA)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+imshow(S_dataplot_phase,figname=filename2+"_PHASE",extent=[mwpwr_list[0],mwpwr_list[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'power(dB)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
 plt.savefig(filename2+"_PHASE"+'.pdf',format='pdf',dpi=300)
 plt.savefig(filename2+"_PHASE"+'.jpg',format='jpg',dpi=300)
 
-heatmap(volt,fwr1,S_dataplot_amp,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter,filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
-heatmap(volt,fwr1,S_dataplot_phase,corlor_scale='jet',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title=filenameafter,filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
+heatmap(mwpwr_list,fwr1,S_dataplot_amp,corlor_scale='jet',xlabel='power(dB)',ylabel='Frequency[GHz]',title=filenameafter,filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
+heatmap(mwpwr_list,fwr1,S_dataplot_phase,corlor_scale='jet',xlabel='power(dB)',ylabel='Frequency[GHz]',title=filenameafter,filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
 
+#%%初始化网分 twotone 3
+vna=keysight_vna('vna2',trace=43)
+vna.two_tone_vna()
+fstart=6.450#12.97#6.471#6.483#6.479#6.47
+fstop=6.450#12.97#6.471#6.483#6.479#6.47
+points=1001
+RTatt=60
+ifband=20#每秒扫描次数
+vnapwr=0#-12
+f=np.linspace(fstop,fstart,points)
+f1=f[::-1]    
+vna.set_power(vnapwr)
+vna.set_startstopFre(fstart,fstop)
+vna.set_points_band(points,ifband)
+#%%初始化微波源 twotone
+mw=MW('mw1')
+mw.MW_setpower(-130)
+mwpwr=-25#-35
+
+mwfre_start=2
+mwfre_stop=12
+points=points
+mw.VnaTrig(mwfre_start,mwfre_stop,points)
+mw.MW_setpower(mwpwr)
+mw.start_Output()
+
+fwr=np.linspace(mwfre_start,mwfre_stop,points)
+fwr1=fwr[::-1]
+# mw.Close_Output()
+#%% twotone sweep mwpower
+twotonenum =1#0.015#-0.016 #-0.0308#0.382;
+# gs5.setlevel_slowV2(-0.2,0.0001)
+# gs5.setlevel_slowV2(Global,0.0001)
+which='S43'
+# gs3.setlevel_slowV2(1.5,0.005)
+alpha=0#gs3.getlevel()*1000
+
+filename = f'/home/machine1/E/Data/LSY_new/data/CELv1/twotone_energyspectrum(alpha={alpha}mA)_vna_power/two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz{time.strftime("%m%d")}/'
+if not os.path.exists(filename):
+    os.makedirs(filename)
+
+
+name0=f"two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz"
+filename1=filename+name0+time.strftime("%H%M%S")+'_'
+exec('bg=vna.get_data_'+which+'()')
+# gs1.setlevel_slowV2(-0.24,0.005)
+# volt=np.linspace(-2.4,-2.4,1)
+# gs6.Start_OutPut() #右z
+# time.sleep(339)
+gs2.setlevel_slowV2(-2.4,0.005)#-0.9,0.05
+S_data=[]
+i=0
+mw.MW_setpower(mwpwr)
+mw.Close_Output()
+vnapwr_list = np.linspace(-30,6,37)
+print(time.strftime("%H:%M:%S"))
+for i in tqdm(range(len(vnapwr_list))):
+
+    vna.set_power(vnapwr_list[i])
+    exec('data=vna.get_data_'+which+'()')
+    S_data.append(data)
+    S_dataplot=np.rot90(np.array(S_data))
+    S_dataplot_amp=20*np.log10(np.abs(S_dataplot))
+    Phase=np.angle(np.array(S_data))
+    S_dataplot_phase=np.rot90(phase_handle(Phase, f1, 50.11))
+    amp,phase=plot_removebg(S_dataplot_amp,S_dataplot_phase)
+    heatmap(np.linspace(vnapwr_list[0],vnapwr_list[i],i),fwr1,S_dataplot_amp,
+        corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title='Sweep_Amp',
+        filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True, auto_open=False)
+    heatmap(np.linspace(vnapwr_list[0],vnapwr_list[i],i),fwr1,S_dataplot_phase,
+            corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title='sweep_Phase',
+            filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True, auto_open=False)
+
+mw.MW_setpower(-130)
+# mw.Close_Output()
+# gs3.setlevel_slow(0,0.005)
+# gs6.setlevel_slowV2(0,0.005)  
+##%%SAVE for two tone
+Sdata=np.array(S_data)
+about=' BOX?; setup: in:port 2,out: 1; \n\
+    Attenuation: Vna={}dB={}+{}dB, inline=60dB=42+8+10dB, outline=76dB(RT)+36dB(4K) \n\
+    fstart={}Ghz,fstop={}Ghz,points={},ifband={}Hz,vnapwr={}dB \n\
+    mwpower from{}mA to{}mA'.format(RTatt-vnapwr,RTatt,-vnapwr,fstart,fstop,points,ifband,vnapwr,vnapwr_list[0],vnapwr_list[-1])
+
+
+# filename1=filename+filenameafter+'.npz'
+np.savez(filename1+'.npz',fre=fwr1,vnapwr_list=vnapwr_list,Sdata=Sdata,vnapwr=vnapwr,about=about)
+about_txt=open(filename1 +'.txt','a')
+about_txt.write(str(about))
+about_txt.close()
+
+filenameafter = "sweep"
+
+filename2=filename1
+imshow(S_dataplot_amp,figname=filename2+"_AMP",extent=[vnapwr_list[0],vnapwr_list[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'power(dB)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+plt.savefig(filename2+"_AMP"+'.pdf',format='pdf',dpi=300)
+plt.savefig(filename2+"_AMP"+'.jpg',format='jpg',dpi=300)
+
+imshow(S_dataplot_phase,figname=filename2+"_PHASE",extent=[vnapwr_list[0],vnapwr_list[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'power(dB)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+plt.savefig(filename2+"_PHASE"+'.pdf',format='pdf',dpi=300)
+plt.savefig(filename2+"_PHASE"+'.jpg',format='jpg',dpi=300)
+
+heatmap(vnapwr_list,fwr1,S_dataplot_amp,corlor_scale='jet',xlabel='power(dB)',ylabel='Frequency[GHz]',title=filenameafter,filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
+heatmap(vnapwr_list,fwr1,S_dataplot_phase,corlor_scale='jet',xlabel='power(dB)',ylabel='Frequency[GHz]',title=filenameafter,filename=filename,errobar=[],zmin=0,zmax=1,zauto=True)
+
+#%%初始化网分 twotone 4
+vna=keysight_vna('vna2',trace=43)
+vna.two_tone_vna()
+fstart=6.4504#12.97#6.471#6.483#6.479#6.47
+fstop=6.4504#12.97#6.471#6.483#6.479#6.47
+points=101
+RTatt=60
+ifband=20#每秒扫描次数
+vnapwr=-5#-12
+f=np.linspace(fstop,fstart,points)
+f1=f[::-1]    
+vna.set_power(vnapwr)
+vna.set_startstopFre(fstart,fstop)
+vna.set_points_band(points,ifband)
+#%%初始化微波源 twotone
+mw=MW('mw1')
+mw.MW_setpower(-130)
+mwpwr=-13 #35
+
+mwfre_start=3
+mwfre_stop=6.5
+points=points
+mw.VnaTrig(mwfre_start,mwfre_stop,points)
+mw.MW_setpower(mwpwr)
+mw.start_Output()
+
+fwr=np.linspace(mwfre_start,mwfre_stop,points)
+fwr1=fwr[::-1]
+# mw.Close_Output()
+#%% twotone sweep global
+# gs7=GS_200('DC7') 
+# gs7.setCURRmode()
+# gs7.Start_OutPut()
+
+twotonenum =1#0.015#-0.016 #-0.0308#0.382;
+gs1.setlevel_slowV2(0,0.005)
+gs2.setlevel_slowV2(-2.04,0.005)
+which='S43'
+# gs3.setlevel_slowV2(1.5,0.005)
+alpha=0#gs3.getlevel()*1000
+# filename = f'/home/machine1/E/Data/LSY_new/data/test_tanmo/twotone_energyspectrum(alpha={alpha}mA)_global/two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz{time.strftime("%m%d")}/'
+filename = f'/home/machine1/E/Data/LSY_new/data/CELv1/twotone_energyspectrum(alpha={alpha}mA)_global/two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz{time.strftime("%m%d")}/'
+if not os.path.exists(filename):
+    os.makedirs(filename)
+
+
+name0=f"two_tone_qubit_freq_{mwfre_start}GHz_to_{mwfre_stop}GHz_cavity_freq_{fstart}GHz"
+filename1=filename+name0+time.strftime("%H%M%S")+'_'
+# exec('bg=vna.get_data_'+which+'()')
+
+S_data=[]
+i=0
+mw.MW_setpower(mwpwr)
+mw.start_Output()
+volt_list = np.linspace(-0.76, -0.72, 51)
+print(time.strftime("%H:%M:%S"))
+gs4.setlevel_slowV2(volt_list[0], 0.0001)
+for i in tqdm(range(len(volt_list))):
+
+    gs4.setlevel_slowV2(volt_list[i], 0.0001)
+    exec('data=vna.get_data_'+which+'()')
+    S_data.append(data)
+    S_dataplot=np.rot90(np.array(S_data))
+    S_dataplot_amp=20*np.log10(np.abs(S_dataplot))
+    Phase=np.angle(np.array(S_data))
+    S_dataplot_phase=np.rot90(phase_handle(Phase, f1, 67.06))
+    amp,phase=plot_removebg(S_dataplot_amp,S_dataplot_phase)
+    heatmap(np.linspace(volt_list[0],volt_list[i],i),fwr1,S_dataplot_amp,
+        corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title='Sweep_Amp',
+        filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True, auto_open=False)
+    heatmap(np.linspace(volt_list[0],volt_list[i],i),fwr1,S_dataplot_phase,
+            corlor_scale='bwr',xlabel='Current[mA]',ylabel='Frequency[Ghz]',title='sweep_Phase',
+            filename=filename1,errobar=[],zmin=0,zmax=1,zauto=True, auto_open=False)
+
+mw.MW_setpower(-130)
+# mw.Close_Output()
+# gs3.setlevel_slow(0,0.005)
+# gs6.setlevel_slowV2(0,0.005)  
+##%%SAVE for two tone
+Sdata=np.array(S_data)    
+about=f'''
+BOX?; setup: in:port 2,out: 1;
+
+Attenuation: Vna={RTatt-vnapwr} dB={RTatt}+{-vnapwr} dB, inline = 60 dB = 42+8+10 dB,\n\
+Amp: outline=76 dB(RT)+36 dB(4K)
+    
+VNA Paras: fstart = {fstart} GHz,fstop = {fstop} GHz,points = {points},ifband = {ifband} Hz,vnapwr = {vnapwr} dB
+MW Paras: mwpower = {mwpwr} dB, fstart = {mwfre_start} GHz, fstop = {mwfre_stop} GHz, points = {points}
+GS current: {volt_list[0]}mA to {volt_list[-1]}mA, bias type: Global
+''' 
+
+
+# filename1=filename+filenameafter+'.npz'
+np.savez(filename1+'.npz',fre=fwr1,volt_list=volt_list,Sdata=Sdata,vnapwr=vnapwr,about=about)
+about_txt=open(filename1 +'.txt','a')
+about_txt.write(str(about))
+about_txt.close()
+
+filenameafter = "sweep"
+
+filename2=filename1
+imshow(S_dataplot_amp,figname=filename2+"_AMP",extent=[volt_list[0],volt_list[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'power(dB)',ylabel=r'Frequency (GHz)',cbarlabel=r"Amplitude(dB)",color='bwr',interpolations='None') 
+plt.savefig(filename2+"_AMP"+'.pdf',format='pdf',dpi=300)
+plt.savefig(filename2+"_AMP"+'.jpg',format='jpg',dpi=300)
+
+imshow(S_dataplot_phase,figname=filename2+"_PHASE",extent=[volt_list[0],volt_list[i],fwr1[-1],fwr1[0]],xround='%0.2f',yround='%0.2f',xlabel=r'power(dB)',ylabel=r'Frequency (GHz)',cbarlabel=r"Phase(rad)",color='bwr',interpolations='None') 
+plt.savefig(filename2+"_PHASE"+'.pdf',format='pdf',dpi=300)
+plt.savefig(filename2+"_PHASE"+'.jpg',format='jpg',dpi=300)
+#%%
+heatmap(volt_list,fwr1,S_dataplot_amp,corlor_scale='hot',xlabel='power(dB)',ylabel='Frequency[GHz]',title=filenameafter,filename=filename,errobar=[],zmin=-80,zmax=-65,zauto=False)
+heatmap(volt_list,fwr1,S_dataplot_phase,corlor_scale='hot',xlabel='power(dB)',ylabel='Frequency[GHz]',title=filenameafter,filename=filename,errobar=[],zmin=-1,zmax=2,zauto=False)
+    
 
 #%%compensate
 

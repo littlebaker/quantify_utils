@@ -1,0 +1,17 @@
+
+实验日期：2023 1104 1158
+实验名称：Left_cavity_spectrum_scan_and_fitting_11041158
+备注：腔频特性
+文件位置：./data/CEL_V1/Cavity_spectrum1D/20231104/Left_cavity_spectrum_scan_and_fitting_11041158
+
+实验日期：2023 1104 1202 ✅
+实验名称：Left_cavity_spectrum_scan_and_fitting_11041202
+备注：左边腔的数据
+文件位置：./data/CEL_V1/Cavity_spectrum1D/20231104/Left_cavity_spectrum_scan_and_fitting_11041202
+
+
+实验日期：2023 1104 1209 ✅
+实验名称：Right_cavity_spectrum_scan_and_fitting_11041209
+备注：右边腔的数据
+文件位置：./data/CEL_V1/Cavity_spectrum1D/20231104/Right_cavity_spectrum_scan_and_fitting_11041209
+
