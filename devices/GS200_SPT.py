@@ -76,25 +76,36 @@ class GS_200(object):
         velocity = velocity * 10**-3
         v0 = float(self.Inst.query(":SOUR:LEV?"))
         t1 = int(np.abs(v1 - v0) / velocity)
-        print(t1)
-        if t1 >= 1 and t1 < 3600:
+        print("Current source needs: ", t1, " seconds", end="")
+
+        t_left = t1
+        while t_left >= 3600:
+            t2 = 3599
+            v_current = float(self.Inst.query(":SOUR:LEV?"))
+            v2 = v_current + t2 * velocity * np.sign(v1 - v_current)
             aa = self.Inst.write(":PROG:EDIT:START")
-            #        aa+=self.Inst.write('::SOUR:FUNC VOLT')
-            # aa+=self.Inst.write(':SOUR:LEV {}'.format(v0))
-            aa += self.Inst.write(":SOUR:LEV {}".format(v1))
+            aa += self.Inst.write(":SOUR:LEV {}".format(v2))
             aa += self.Inst.write(":PROG:EDIT:END")
-            aa += self.Inst.write(":PROG:INT {}".format(t1))
-            aa += self.Inst.write(":PROG:SLOP {}".format(t1))
+            aa += self.Inst.write(":PROG:INT {}".format(t2))
+            aa += self.Inst.write(":PROG:SLOP {}".format(t2))
             aa += self.Inst.write(":PROG:REP OFF")
             aa += self.Inst.write(":PROG:RUN")
-            # print(time.strftime("%H:%M:%S"))
-            for i in range(int(t1 + 1)):
-                time.sleep(1)
-        elif t1 > 3600:
-            print("time is too long")
-            # vs=float(self.Inst.query(':SOUR:LEV?'))
-            # print(vs)
-            # print(time.strftime("%H:%M:%S"))
+            time.sleep(t2 + 1)
+            t_left = t_left - t2
+
+        v0 = float(self.Inst.query(":SOUR:LEV?"))
+        t_left = int(np.abs(v1 - v0) / velocity)
+
+        if t_left >= 1:
+            aa = self.Inst.write(":PROG:EDIT:START")
+            aa += self.Inst.write(":SOUR:LEV {}".format(v1))
+            aa += self.Inst.write(":PROG:EDIT:END")
+            aa += self.Inst.write(":PROG:INT {}".format(t_left))
+            aa += self.Inst.write(":PROG:SLOP {}".format(t_left))
+            aa += self.Inst.write(":PROG:REP OFF")
+            aa += self.Inst.write(":PROG:RUN")
+
+            time.sleep(t_left + 1)
 
     def StopSetLevel(self):
         self.Inst.write(":PROG:PAUS")

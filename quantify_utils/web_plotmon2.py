@@ -24,6 +24,7 @@ class PlotMonitor_web(Instrument):
         self.proc = None
         self.draw_undone = draw_undone
         self.draw_done = draw_done
+        self.port = 5006
 
     def update(self, tuid):
         self.tuid = tuid
@@ -32,7 +33,7 @@ class PlotMonitor_web(Instrument):
             self.proc = None
         self.proc = Process(
             target=main,
-            args=(self.datadir, tuid, self.draw_undone, self.draw_done, snapshot_prune),
+            args=(self.datadir, tuid, self.draw_undone, self.draw_done, snapshot_prune, self.port),
             daemon=True,
         )
         self.proc.start()

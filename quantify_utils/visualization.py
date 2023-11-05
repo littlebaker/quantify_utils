@@ -62,7 +62,7 @@ def spec_draw_widget_phase(dset: xr.Dataset, elec_delay=0):
 
 def heatmap_with_colorbar_range(dset_grid, data_var="y0", backend=None, cmap="bwr"):
     low, high = np.min(dset_grid[data_var].data), np.max(dset_grid[data_var].data)
-    print(low, high)
+
     color_bar_range = pn.widgets.RangeSlider(
         name="color bar range", start=low, end=high
     )
@@ -83,7 +83,6 @@ def heatmap_crange_cmap(dset_grid, data_var="y0", backend=None, cmap="bwr"):
         name="color bar selector", value=cmap, options=["bwr", "hot", "hot_r", "jet"]
     )
     low, high = np.min(dset_grid[data_var].data), np.max(dset_grid[data_var].data)
-    print(low, high)
     color_bar_range = pn.widgets.RangeSlider(
         name="color bar range", start=low, end=high
     )

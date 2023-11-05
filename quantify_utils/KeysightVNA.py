@@ -10,7 +10,7 @@ from qcodes.parameters import ManualParameter
 from deprecated import deprecated
 from qcodes.validators import Numbers
 
-from hunanu.Instrument.VNA_keysightN5231b_4Portsand2Ports import keysight_vna
+from devices.VNA_keysightN5231b_4Portsand2Ports import keysight_vna
 
 
 class KeysightVNA(Instrument):

@@ -158,12 +158,14 @@ class SpectrumAnalysis(ba.Basic2DAnalysis):
             _current = self.dataset_processed.x1.values
 
             im1 = axes[0].imshow(
-                self.dataset_processed["amp" + str(i)].values.T,
+                self.dataset_processed["amp" + str(i)].values[::-1],
+                aspect="auto",
                 cmap="bwr",
                 extent=[_current[0], _current[-1], _freq[0], _freq[-1]],
             )
             im2 = axes[1].imshow(
-                self.dataset_processed["phase" + str(i)].values.T,
+                self.dataset_processed["phase" + str(i)].values[::-1],
+                aspect="auto",
                 cmap="bwr",
                 extent=[_current[0], _current[-1], _freq[0], _freq[-1]],
             )

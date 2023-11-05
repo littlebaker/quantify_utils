@@ -28,7 +28,9 @@ class keysight_vna(object):
         # For Serial and TCP/IP socket connections enable the read Termination Character, or read's will timeout
         if self.Inst.resource_name.startswith('ASRL') or self.Inst.resource_name.endswith('SOCKET'):
             self.Inst.read_termination = '\n'
-
+            
+        # I don't know why this is important
+        self.Inst.timeout = timeout * 1000
         self.Inst.write(
             "*RST",
         )
@@ -149,39 +151,36 @@ class keysight_vna(object):
         return self.Inst.query(string)
 
     def get_data(self):
-        if self.trace == 21:
-            return self.get_data_S21()
-        elif self.trace == 23:
-            return self.get_data_S23()
-        elif self.trace == 41:
-            return self.get_data_S41()
-        elif self.trace == 43:
-            return self.get_data_S43()
+        if self.trace in [21, 43, 23, 41]:
+            self.Inst.write("FORMat:DATA REAL,64")
+            self.Inst.write("FORMat:DATA ASCII")
+            self.Inst.write("INITiate:IMMediate;*wai")
+            # 选择特定的trace
+            self.Inst.write("CALCulate:PARameter:SELect " f"MySMeaS{self.trace}" "")
+            self.Inst.query("*OPC?")  # 等待操作完成
+            sawdata = self.Inst.query("CALCulate:DATA? SDATA")
+            sawdata1 = sawdata.split(",")
+            Sdata = []
+            for i in range(len(sawdata1)):
+                if i % 2 == 0:
+                    Sdata.append(complex(float(sawdata1[i]), float(sawdata1[i + 1])))
+            Sdata = np.array(Sdata)
+            return Sdata
         elif self.trace == 4:
             return self.get_data_all()
 
         raise Exception("Unknown trace: ", self.trace)
 
-        self.Inst.write("FORMat:DATA REAL,64")
-        self.Inst.write("FORMat:DATA ASCII")
-        self.Inst.write("CALCulate:PARameter:SELect " "MySMeaS21" "")
-        self.Inst.write("INITiate:IMMediate;*wai")
-        self.Inst.write("CALCulate:DATA? SDATA")
-        sawdata = self.Inst.read()
-        sawdata1 = sawdata.split(",")
-        Sdata = []
-        for i in range(len(sawdata1)):
-            if i % 2 == 0:
-                Sdata.append(complex(float(sawdata1[i]), float(sawdata1[i + 1])))
-        Sdata = np.array(Sdata)
-        return Sdata
-        # print(data,f)
+        
 
     def get_data_S21(self):
         self.Inst.write("FORMat:DATA REAL,64")
         self.Inst.write("FORMat:DATA ASCII")
+        self.Inst.query("*OPC?")  # 等待操作完成
         self.Inst.write("INITiate:IMMediate;*wai")
+        self.Inst.query("*OPC?") 
         self.Inst.write("CALCulate:PARameter:SELect " "MySMeaS21" "")
+        self.Inst.query("*OPC?") 
         self.Inst.write("CALCulate:DATA? SDATA")
         sawdata = self.Inst.read()
         sawdata1 = sawdata.split(",")

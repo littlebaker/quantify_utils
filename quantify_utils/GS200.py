@@ -85,7 +85,8 @@ class YokogawaGS(Instrument):
         try:
             return self.gs[key]
         except Exception as e: 
-            self.logger.warning(e)
+            # self.logger.debug(e)
+            pass
         return super().__getattr__(key)
     
     

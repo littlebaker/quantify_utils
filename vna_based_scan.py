@@ -126,7 +126,7 @@ if __name__ == "__main__":
         gs=gs,
         gs_step=0.0001,
         elec_delay=0,
-        volt=np.linspace(-1, 1, 1001),
+        volt=np.linspace(0, -1, 1001),
         fstart=6.45 - 0.025,
         fstop=6.45 + 0.025,
         points=51,
